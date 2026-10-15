@@ -128,13 +128,6 @@ export class ZcorPersona implements Persona {
         query, [], ['read'], (args) => this.memory.query(args)),
       tool('zcor_memory_history', '本地查询操作记录：按操作时间范围（含端点）及记录全文关键词全部命中筛选。包含修改前后内容、删除快照、重要标记和工具调用结果状态；按时间倒序分页，不调用 LLM。',
         query, [], ['read'], (args) => this.memory.history(args)),
-      tool('zcor_memory_backup', '将当前 Memory 状态复制为带时间戳的备份文件。', {}, [], ['write'],
-        () => ({ file: this.memory.backup() })),
-      tool('zcor_memory_restore', '从指定备份文件恢复 Memory 状态；恢复前应先备份当前状态。',
-        { backupFile: string }, ['backupFile'], ['write'], (args) => {
-          this.memory.restore(args.backupFile);
-          return { restored: true };
-        }),
       tool('zcor_memory_delete', '按 id 删除当前记忆；操作历史保留删除前内容。', { id: string }, ['id'], ['write'],
         (args) => ({ deleted: this.memory.delete(args.id) })),
       tool('zcor_synonyms_add', '保存一组同义词，查询时双向扩展，重叠词组连通。',

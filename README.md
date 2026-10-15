@@ -14,7 +14,6 @@ AI 自行调用工具保存和检索记忆：
 - `zcor_memory_important(id, important)`：标记或取消重要记忆。
 - `zcor_memory_query(keywords?, from?, to?, limit?, offset?)`：本地查询当前记忆。
 - `zcor_memory_history(keywords?, from?, to?, limit?, offset?)`：本地查询操作历史。
-- `zcor_memory_backup()` / `zcor_memory_restore(backupFile)`：备份或恢复 Memory 状态。
 - `zcor_synonyms_add(terms)`：添加同义词组。
 - `zcor_memory_search(keywords)`：关键词数组检索。
 
@@ -42,14 +41,13 @@ AI 自行调用工具保存和检索记忆：
 `nextOffset`；同一时刻按记录顺序倒序。`limit` 默认 20、最多 100，`offset` 默认 0。
 查询期间新增记录可能改变分页位置。
 
-`memory-state.json` 原子保存当前记忆、重要标记和操作历史，包含状态格式版本。首次工具操作自动载入旧
+`memory-state.json` 原子保存当前记忆、重要标记和操作历史。首次工具操作自动载入旧
 `memories.json` 的全部记录，保留原文件作迁移快照，此后以 `memory-state.json` 为准。
 没有旧文件时从空记忆开始。操作历史从迁移后开始；修改保留前后全文，删除保留删除前全文，
 重要标记保留替换回执。所有记忆工具调用记录参数及成功或错误状态，包括读取、查询和同义词修改；
 自动召回、系统前缀读取不记操作历史。历史查询本身在结果产生后留痕。
 历史随操作累积、没有自动清理；整份状态文件在写入时重写，适合单进程的小型 Memory。
 同义词文件与操作日志分别保存，日志写入失败会返回“操作可能已生效”的错误。
-`zcor_memory_backup` 生成带时间戳的状态副本；恢复前应先备份当前状态，恢复只接受当前版本的副本。
 
 `synonyms.json` 保存词组，首次创建时复制包内的中文及少量英文词组。
 可以通过工具补充，或直接编辑部署侧同义词文件。

@@ -7,7 +7,6 @@ export const MAX_CANDIDATES = 20;
 export const MAX_RESULTS = 5;
 export const MAX_AUTO_RECALL = 10;
 export const MAX_IMPORTANT = 5;
-export const MEMORY_STATE_VERSION = 1;
 
 export interface MemoryOperation {
   id: string;
@@ -16,7 +15,6 @@ export interface MemoryOperation {
   details: unknown;
 }
 interface MemoryState {
-  version: number;
   records: MemoryRecord[];
   importantIds: string[];
   history: MemoryOperation[];
@@ -104,10 +102,6 @@ export class MemoryStore {
     renameSync(temporary, file);
   }
 
-  private freshState(records: MemoryRecord[] = []): MemoryState {
-    return { version: MEMORY_STATE_VERSION, records, importantIds: [], history: [] };
-  }
-
   private legacyRecords(): MemoryRecord[] {
     const data: unknown = JSON.parse(readFileSync(this.file, 'utf8'));
     if (!Array.isArray(data) || !data.every((v) => v && typeof v === 'object'
@@ -118,9 +112,9 @@ export class MemoryStore {
   }
 
   private state(): MemoryState {
-    if (!existsSync(this.stateFile)) return this.freshState(this.legacyRecords());
+    if (!existsSync(this.stateFile)) return { records: this.legacyRecords(), importantIds: [], history: [] };
     const state = JSON.parse(readFileSync(this.stateFile, 'utf8')) as MemoryState;
-    if (!state || state.version !== MEMORY_STATE_VERSION || !Array.isArray(state.records) || !state.records.every((record) => record
+    if (!state || !Array.isArray(state.records) || !state.records.every((record) => record
       && ['id', 'title', 'content', 'createdAt', 'updatedAt'].every((key) =>
         typeof (record as unknown as Record<string, unknown>)[key] === 'string'))
       || !Array.isArray(state.importantIds) || state.importantIds.length > MAX_IMPORTANT
@@ -128,7 +122,7 @@ export class MemoryStore {
       || !state.importantIds.every((id) => typeof id === 'string' && state.records.some((r) => r.id === id))
       || !Array.isArray(state.history) || !state.history.every((entry) => entry
         && typeof entry.id === 'string' && typeof entry.recordedAt === 'string' && typeof entry.kind === 'string')) {
-      throw new Error(`memory-state.json 格式错误或版本不支持（需要 ${MEMORY_STATE_VERSION}）`);
+      throw new Error('memory-state.json 格式错误');
     }
     return state;
   }
@@ -136,29 +130,12 @@ export class MemoryStore {
   private records(): MemoryRecord[] { return this.state().records; }
 
   private commit(state: MemoryState, kind: string, details: unknown): void {
-    state.version = MEMORY_STATE_VERSION;
     state.history.push({ id: randomUUID(), recordedAt: this.now(), kind, details });
     this.save(this.stateFile, state);
   }
 
   audit(kind: string, details: unknown): void {
     this.commit(this.state(), kind, details);
-  }
-
-  backup(): string {
-    const backupFile = `${this.stateFile}.bak-${this.now().replace(/[:.]/g, '-')}`;
-    writeFileSync(backupFile, readFileSync(this.stateFile, 'utf8'), 'utf8');
-    return backupFile;
-  }
-
-  restore(backupFile: unknown): void {
-    const file = requiredText(backupFile, 'backupFile');
-    const restored = JSON.parse(readFileSync(file, 'utf8')) as MemoryState;
-    if (restored.version !== MEMORY_STATE_VERSION || !Array.isArray(restored.records)
-      || !Array.isArray(restored.importantIds) || !Array.isArray(restored.history)) {
-      throw new Error(`备份格式错误或版本不支持（需要 ${MEMORY_STATE_VERSION}）`);
-    }
-    this.save(this.stateFile, restored);
   }
 
   important(): MemoryRecord[] {

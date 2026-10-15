@@ -1,0 +1,28 @@
+{
+  "name": "cortico-bot-zcor",
+  "version": "0.1.1",
+  "type": "module",
+  "main": "./index.ts",
+  "description": "Cortico bot with synonym title retrieval and LLM memory selection",
+  "license": "MIT",
+  "keywords": [
+    "cortico-bot",
+    "cortico"
+  ],
+  "engines": {
+    "node": ">=22"
+  },
+  "cortico": {
+    "kind": "bot",
+    "api": 6,
+    "displayName": "zcor"
+  },
+  "files": [
+    "index.ts",
+    "persona",
+    "README.md"
+  ],
+  "devDependencies": {
+    "cortico": "^0.1.16"
+  }
+}

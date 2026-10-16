@@ -1,0 +1,562 @@
+{
+  "tools": [
+    {
+      "name": "zcor_memory_write",
+      "description": "持久化标题、正文和可选检索词；提供已有 id 时更新，否则新增。",
+      "parameters": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "title": {
+            "type": "string",
+            "minLength": 1
+          },
+          "content": {
+            "type": "string",
+            "minLength": 1
+          },
+          "id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "keywords": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        },
+        "required": [
+          "title",
+          "content"
+        ]
+      },
+      "tags": [
+        "write"
+      ],
+      "summary": {
+        "zh": "新增或更新一条持久化 Memory。",
+        "en": "Creates or updates a persistent memory."
+      }
+    },
+    {
+      "name": "zcor_memory_read",
+      "description": "按 id 读取记忆。",
+      "parameters": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "required": [
+          "id"
+        ]
+      },
+      "tags": [
+        "read"
+      ],
+      "summary": {
+        "zh": "按 id 读取一条 Memory。",
+        "en": "Reads one memory by id."
+      }
+    },
+    {
+      "name": "zcor_memory_delete",
+      "description": "按 id 删除当前记忆；操作历史保留删除前内容。",
+      "parameters": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "required": [
+          "id"
+        ]
+      },
+      "tags": [
+        "write"
+      ],
+      "summary": {
+        "zh": "删除一条 Memory，并保留操作历史。",
+        "en": "Deletes a memory while retaining its operation history."
+      }
+    },
+    {
+      "name": "zcor_memory_important",
+      "description": "标记或取消重要记忆。最多 5 条，超出取消最早标记并返回提醒。",
+      "parameters": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "important": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "id",
+          "important"
+        ]
+      },
+      "tags": [
+        "write"
+      ],
+      "summary": {
+        "zh": "标记或取消重要 Memory。",
+        "en": "Marks or unmarks an important memory."
+      }
+    },
+    {
+      "name": "zcor_memory_query",
+      "description": "按更新时间、标题、检索词和正文查询当前记忆。",
+      "parameters": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "keywords": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "from": {
+            "type": "string",
+            "minLength": 1
+          },
+          "to": {
+            "type": "string",
+            "minLength": 1
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100
+          },
+          "offset": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "includeSuperseded": {
+            "type": "boolean",
+            "default": false
+          }
+        }
+      },
+      "tags": [
+        "read"
+      ],
+      "summary": {
+        "zh": "按关键词、时间范围查询当前 Memory。",
+        "en": "Queries current memories by keywords and time range."
+      }
+    },
+    {
+      "name": "zcor_memory_merge",
+      "description": "把至少两条有效记忆合并为一条，并将旧记忆标记为被新记录替代。",
+      "parameters": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "ids": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "title": {
+            "type": "string",
+            "minLength": 1
+          },
+          "content": {
+            "type": "string",
+            "minLength": 1
+          },
+          "keywords": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "reason": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "required": [
+          "ids",
+          "title",
+          "content",
+          "reason"
+        ]
+      },
+      "tags": [
+        "write"
+      ],
+      "summary": {
+        "zh": "合并多条 Memory，并将来源记录标记为已替代。",
+        "en": "Merges memories and marks source records as superseded."
+      }
+    },
+    {
+      "name": "zcor_memory_supersede",
+      "description": "指定一条当前记忆替代其他当前记忆；旧内容保留在历史记录中。",
+      "parameters": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "ids": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "replacementId": {
+            "type": "string",
+            "minLength": 1
+          },
+          "reason": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "required": [
+          "ids",
+          "replacementId",
+          "reason"
+        ]
+      },
+      "tags": [
+        "write"
+      ],
+      "summary": {
+        "zh": "将现有 Memory 标记为其他记录的旧版本。",
+        "en": "Marks existing memories as superseded by another record."
+      }
+    },
+    {
+      "name": "zcor_relationship_read",
+      "description": "按人物标识读取已保存的关系和好感度。",
+      "parameters": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "personId": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "required": [
+          "personId"
+        ]
+      },
+      "tags": [
+        "read"
+      ],
+      "summary": {
+        "zh": "按人物 id 读取关系和好感度。",
+        "en": "Reads a relationship and affinity by person id."
+      }
+    },
+    {
+      "name": "zcor_relationship_query",
+      "description": "按人物姓名、别名、关系描述和更新时间查找关系记录。",
+      "parameters": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "keywords": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "from": {
+            "type": "string",
+            "minLength": 1
+          },
+          "to": {
+            "type": "string",
+            "minLength": 1
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100
+          },
+          "offset": {
+            "type": "integer",
+            "minimum": 0
+          }
+        }
+      },
+      "tags": [
+        "read"
+      ],
+      "summary": {
+        "zh": "按人物姓名、别名和时间查找关系记录。",
+        "en": "Finds relationship records by name, alias and time."
+      }
+    },
+    {
+      "name": "zcor_relationship_write",
+      "description": "保存人物关系、-100 到 100 的好感度及判断原因。",
+      "parameters": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "personId": {
+            "type": "string",
+            "minLength": 1
+          },
+          "name": {
+            "type": "string",
+            "minLength": 1
+          },
+          "aliases": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "relationship": {
+            "type": "string",
+            "minLength": 1
+          },
+          "affinity": {
+            "type": "number",
+            "minimum": -100,
+            "maximum": 100
+          },
+          "reason": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "required": [
+          "personId",
+          "name",
+          "relationship",
+          "affinity",
+          "reason"
+        ]
+      },
+      "tags": [
+        "write"
+      ],
+      "summary": {
+        "zh": "新增或更新人物关系和好感度。",
+        "en": "Creates or updates a relationship and affinity."
+      }
+    },
+    {
+      "name": "zcor_relationship_delete",
+      "description": "删除人物关系记录；历史记录保留删除前内容。",
+      "parameters": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "personId": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "required": [
+          "personId"
+        ]
+      },
+      "tags": [
+        "write"
+      ],
+      "summary": {
+        "zh": "删除人物关系记录并保留操作历史。",
+        "en": "Deletes a relationship while retaining operation history."
+      }
+    },
+    {
+      "name": "zcor_memory_history",
+      "description": "按操作时间和关键词查询记忆操作历史。",
+      "parameters": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "keywords": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "from": {
+            "type": "string",
+            "minLength": 1
+          },
+          "to": {
+            "type": "string",
+            "minLength": 1
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100
+          },
+          "offset": {
+            "type": "integer",
+            "minimum": 0
+          }
+        }
+      },
+      "tags": [
+        "read"
+      ],
+      "summary": {
+        "zh": "按关键词、时间范围查询 Memory 操作历史。",
+        "en": "Queries memory operation history by keywords and time range."
+      }
+    },
+    {
+      "name": "zcor_memory_backup",
+      "description": "将当前 Memory 状态复制为带时间戳的备份文件。",
+      "parameters": {
+        "type": "object",
+        "properties": {},
+        "required": []
+      },
+      "tags": [
+        "write"
+      ],
+      "summary": {
+        "zh": "备份 Memory 状态。",
+        "en": "Backs up the Memory state."
+      }
+    },
+    {
+      "name": "zcor_memory_restore",
+      "description": "从指定备份文件恢复 Memory 状态。",
+      "parameters": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "backupFile": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "required": [
+          "backupFile"
+        ]
+      },
+      "tags": [
+        "write"
+      ],
+      "summary": {
+        "zh": "从备份恢复 Memory 状态。",
+        "en": "Restores the Memory state from a backup."
+      }
+    },
+    {
+      "name": "zcor_synonyms_add",
+      "description": "保存一组同义词，查询时双向扩展。",
+      "parameters": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "terms": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        },
+        "required": [
+          "terms"
+        ]
+      },
+      "tags": [
+        "write"
+      ],
+      "summary": {
+        "zh": "添加同义词组。",
+        "en": "Adds a synonym group."
+      }
+    },
+    {
+      "name": "zcor_memory_search",
+      "description": "关键词经同义词扩展后匹配标题，再由 LLM 从候选正文中选择记忆。",
+      "parameters": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "keywords": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        },
+        "required": [
+          "keywords"
+        ]
+      },
+      "tags": [
+        "read"
+      ],
+      "summary": {
+        "zh": "先筛选标题候选，再由 LLM 从正文中选择相关 Memory。",
+        "en": "Shortlists titles locally, then asks the LLM to select relevant memories from their contents."
+      }
+    },
+    {
+      "name": "zcor_end_turn",
+      "description": "结束本轮，等待新事件。",
+      "parameters": {
+        "type": "object",
+        "properties": {},
+        "required": []
+      },
+      "tags": [
+        "flow"
+      ],
+      "summary": {
+        "zh": "结束本轮。",
+        "en": "Ends the current turn."
+      }
+    }
+  ],
+  "bot": {
+    "worlds": [
+      "console"
+    ],
+    "memory": {
+      "name": "Memory",
+      "form": {
+        "zh": "带版本、重要标记和操作历史的 JSON Memory 状态文件，附件存于 blobs/。",
+        "en": "A versioned JSON Memory state with important marks and operation history; attachments live under blobs/."
+      }
+    }
+  }
+}

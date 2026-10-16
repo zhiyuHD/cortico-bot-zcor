@@ -1,13 +1,39 @@
 {
   "name": "cortico-bot-zcor",
-  "version": "0.1.0",
+  "version": "0.4.0",
   "type": "module",
   "main": "./index.ts",
-  "description": "Cortico bot with synonym title retrieval and LLM memory selection",
+  "description": "Cortico bot with persistent memory, local recall and relationship tracking",
   "license": "MIT",
-  "keywords": ["cortico-bot", "cortico"],
-  "engines": { "node": ">=22" },
-  "cortico": { "kind": "bot", "api": 6, "displayName": "zcor" },
-  "files": ["index.ts", "persona", "README.md"],
-  "devDependencies": { "cortico": "^0.1.16" }
+  "keywords": [
+    "cortico-bot",
+    "cortico"
+  ],
+  "engines": {
+    "node": ">=22"
+  },
+  "cortico": {
+    "kind": "bot",
+    "api": 7,
+    "displayName": "zcor",
+    "describe": "describe.json",
+    "webUiClient": "dist/webui.js",
+    "tags": ["memory", "internal-state"]
+  },
+  "scripts": {
+    "build:webui": "esbuild webui/client.ts --bundle --format=esm --platform=browser --target=es2022 --outfile=dist/webui.js"
+  },
+  "files": [
+    "index.ts",
+    "persona",
+    "webui",
+    "dist/webui.js",
+    "README.md",
+    "describe.json",
+    "CHANGELOG.md"
+  ],
+  "devDependencies": {
+    "cortico": "^0.2.0",
+    "esbuild": "^0.28.2"
+  }
 }

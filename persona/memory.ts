@@ -1,30 +1,25 @@
 import { randomUUID } from 'node:crypto';
-import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
+import { copyFileSync, existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import seedSynonyms from './synonyms.json';
+import { decodeMemoryState, MAX_AFFINITY, MAX_IMPORTANT, MEMORY_STATE_VERSION, MIN_AFFINITY, validAffinity,
+  type MemoryState, type MemoryRecord, type RelationshipRecord } from './state.ts';
+
+export { MAX_AFFINITY, MAX_IMPORTANT, MEMORY_STATE_VERSION, MIN_AFFINITY } from './state.ts';
+export type { MemoryOperation, MemoryRecord, RelationshipRecord } from './state.ts';
 
 export const MAX_CANDIDATES = 20;
 export const MAX_RESULTS = 5;
 export const MAX_AUTO_RECALL = 10;
-export const MAX_IMPORTANT = 5;
-
-export interface MemoryOperation {
-  id: string;
-  recordedAt: string;
-  kind: string;
-  details: unknown;
-}
-interface MemoryState {
-  records: MemoryRecord[];
-  importantIds: string[];
-  history: MemoryOperation[];
-}
 export interface MemoryQuery {
   keywords?: unknown;
   from?: unknown;
   to?: unknown;
   limit?: unknown;
   offset?: unknown;
+}
+export interface CurrentMemoryQuery extends MemoryQuery {
+  includeSuperseded?: unknown;
 }
 
 function queryOptions(query: MemoryQuery) {
@@ -60,14 +55,6 @@ function queryRecords<T>(rows: T[], query: MemoryQuery, at: (row: T) => string, 
     nextOffset: options.offset + items.length < matches.length ? options.offset + items.length : null };
 }
 const segmenter = new Intl.Segmenter('zh', { granularity: 'word' });
-export interface MemoryRecord {
-  id: string;
-  title: string;
-  content: string;
-  createdAt: string;
-  updatedAt: string;
-}
-
 export function requiredText(value: unknown, name: string): string {
   if (typeof value !== 'string' || !value.trim()) throw new Error(`${name} 必须是非空字符串`);
   return value.trim();
@@ -82,12 +69,22 @@ function terms(value: unknown): string[] {
   return [...new Set(value.map((v) => normalize(requiredText(v, '关键词'))))];
 }
 
+function textList(value: unknown, name: string): string[] {
+  if (!Array.isArray(value)) throw new Error(`${name} 必须是字符串数组`);
+  const unique = new Map<string, string>();
+  for (const item of value) {
+    const text = requiredText(item, name);
+    if (!unique.has(normalize(text))) unique.set(normalize(text), text);
+  }
+  return [...unique.values()];
+}
+
 export class MemoryStore {
   private readonly file: string;
   private readonly synonymsFile: string;
   private readonly stateFile: string;
 
-  constructor(directory: string, private readonly now: () => string) {
+  constructor(private readonly directory: string, private readonly now: () => string) {
     mkdirSync(directory, { recursive: true });
     this.file = join(directory, 'memories.json');
     this.synonymsFile = join(directory, 'synonyms.json');
@@ -102,40 +99,50 @@ export class MemoryStore {
     renameSync(temporary, file);
   }
 
+  private freshState(records: MemoryRecord[] = []): MemoryState {
+    return { version: MEMORY_STATE_VERSION, records, importantIds: [], relationships: [], history: [] };
+  }
+
   private legacyRecords(): MemoryRecord[] {
     const data: unknown = JSON.parse(readFileSync(this.file, 'utf8'));
-    if (!Array.isArray(data) || !data.every((v) => v && typeof v === 'object'
-      && ['id', 'title', 'content', 'createdAt', 'updatedAt'].every((key) => typeof v[key] === 'string'))) {
-      throw new Error('memories.json 格式错误');
-    }
-    return data;
+    return decodeMemoryState({ version: 1, records: data, importantIds: [], history: [] }).records;
   }
 
   private state(): MemoryState {
-    if (!existsSync(this.stateFile)) return { records: this.legacyRecords(), importantIds: [], history: [] };
-    const state = JSON.parse(readFileSync(this.stateFile, 'utf8')) as MemoryState;
-    if (!state || !Array.isArray(state.records) || !state.records.every((record) => record
-      && ['id', 'title', 'content', 'createdAt', 'updatedAt'].every((key) =>
-        typeof (record as unknown as Record<string, unknown>)[key] === 'string'))
-      || !Array.isArray(state.importantIds) || state.importantIds.length > MAX_IMPORTANT
-      || new Set(state.importantIds).size !== state.importantIds.length
-      || !state.importantIds.every((id) => typeof id === 'string' && state.records.some((r) => r.id === id))
-      || !Array.isArray(state.history) || !state.history.every((entry) => entry
-        && typeof entry.id === 'string' && typeof entry.recordedAt === 'string' && typeof entry.kind === 'string')) {
-      throw new Error('memory-state.json 格式错误');
-    }
-    return state;
+    if (!existsSync(this.stateFile)) return this.freshState(this.legacyRecords());
+    return decodeMemoryState(JSON.parse(readFileSync(this.stateFile, 'utf8')));
   }
 
   private records(): MemoryRecord[] { return this.state().records; }
 
-  private commit(state: MemoryState, kind: string, details: unknown): void {
-    state.history.push({ id: randomUUID(), recordedAt: this.now(), kind, details });
+  private saveState(state: MemoryState): void {
+    if (existsSync(this.stateFile) && JSON.parse(readFileSync(this.stateFile, 'utf8')).version === 1) {
+      const snapshot = join(this.directory, 'memory-state.v1.json');
+      if (!existsSync(snapshot)) copyFileSync(this.stateFile, snapshot);
+    }
     this.save(this.stateFile, state);
+  }
+
+  private commit(state: MemoryState, kind: string, details: unknown): void {
+    state.version = MEMORY_STATE_VERSION;
+    state.history.push({ id: randomUUID(), recordedAt: this.now(), kind, details });
+    this.saveState(state);
   }
 
   audit(kind: string, details: unknown): void {
     this.commit(this.state(), kind, details);
+  }
+
+  backup(): string {
+    const backupFile = `${this.stateFile}.bak-${this.now().replace(/[:.]/g, '-')}-${randomUUID()}`;
+    this.save(backupFile, this.state());
+    return backupFile;
+  }
+
+  restore(backupFile: unknown): void {
+    const file = requiredText(backupFile, 'backupFile');
+    const restored = decodeMemoryState(JSON.parse(readFileSync(file, 'utf8')));
+    this.saveState(restored);
   }
 
   important(): MemoryRecord[] {
@@ -149,6 +156,7 @@ export class MemoryStore {
     const state = this.state();
     const record = state.records.find((r) => r.id === key);
     if (!record) throw new Error('记忆 id 不存在');
+    if (important && record.supersededBy) throw new Error('已被替代的记忆不能标记为重要，请使用替代目标');
     let replaced: MemoryRecord | null = null;
     if (important && !state.importantIds.includes(key)) {
       if (state.importantIds.length === MAX_IMPORTANT) {
@@ -163,9 +171,12 @@ export class MemoryStore {
     return result;
   }
 
-  query(query: MemoryQuery = {}) {
-    return queryRecords(this.records(), query, (record) => record.updatedAt,
-      (record) => `${record.title}\n${record.content}`);
+  query(query: CurrentMemoryQuery = {}) {
+    if (query.includeSuperseded !== undefined && typeof query.includeSuperseded !== 'boolean') {
+      throw new Error('includeSuperseded 必须是布尔值');
+    }
+    return queryRecords(this.records().filter((record) => query.includeSuperseded || !record.supersededBy), query,
+      (record) => record.updatedAt, (record) => `${record.title}\n${record.keywords.join('\n')}\n${record.content}`);
   }
 
   history(query: MemoryQuery = {}) {
@@ -173,21 +184,107 @@ export class MemoryStore {
       (entry) => JSON.stringify(entry));
   }
 
-  write(title: unknown, content: unknown, id?: unknown): MemoryRecord {
+  write(title: unknown, content: unknown, id?: unknown, keywords?: unknown): MemoryRecord {
     const recordTitle = requiredText(title, 'title');
     const recordContent = requiredText(content, 'content');
     const state = this.state();
     const records = state.records;
     const existing = id === undefined ? undefined : records.find((r) => r.id === requiredText(id, 'id'));
     if (id !== undefined && !existing) throw new Error('记忆 id 不存在');
+    if (existing?.supersededBy) throw new Error('已被替代的记忆不能更新，请使用替代目标');
     const at = this.now();
     const record = {
       id: existing?.id ?? randomUUID(), title: recordTitle, content: recordContent,
+      keywords: keywords === undefined ? existing?.keywords ?? [] : textList(keywords, 'keywords'),
       createdAt: existing?.createdAt ?? at, updatedAt: at,
     };
     state.records = [...records.filter((r) => r.id !== record.id), record];
     this.commit(state, existing ? 'update' : 'create', { before: existing ?? null, after: record });
     return record;
+  }
+
+  supersede(ids: unknown, replacementId: unknown, reason: unknown) {
+    const sourceIds = textList(ids, 'ids');
+    if (!sourceIds.length) throw new Error('至少需要一个被替代 id');
+    const targetId = requiredText(replacementId, 'replacementId');
+    const explanation = requiredText(reason, 'reason');
+    const state = this.state();
+    const replacement = state.records.find((record) => record.id === targetId);
+    if (!replacement || replacement.supersededBy) throw new Error('替代目标必须是当前有效记忆');
+    const sources = this.activeSources(state, sourceIds);
+    if (sourceIds.includes(targetId)) throw new Error('不能用记忆替代自身');
+    return this.replace(state, sources, replacement, explanation, 'supersede');
+  }
+
+  merge(ids: unknown, title: unknown, content: unknown, keywords: unknown, reason: unknown) {
+    const sourceIds = textList(ids, 'ids');
+    if (sourceIds.length < 2) throw new Error('合并至少需要两个不同的 id');
+    const state = this.state();
+    const sources = this.activeSources(state, sourceIds);
+    const at = this.now();
+    const replacement: MemoryRecord = { id: randomUUID(), title: requiredText(title, 'title'),
+      content: requiredText(content, 'content'), keywords: keywords === undefined
+        ? textList(sources.flatMap((record) => record.keywords), 'keywords') : textList(keywords, 'keywords'),
+      createdAt: at, updatedAt: at };
+    const explanation = requiredText(reason, 'reason');
+    state.records.push(replacement);
+    return this.replace(state, sources, replacement, explanation, 'merge');
+  }
+
+  private activeSources(state: MemoryState, ids: string[]): MemoryRecord[] {
+    return ids.map((id) => {
+      const record = state.records.find((row) => row.id === id);
+      if (!record || record.supersededBy) throw new Error(`被替代 id 不存在或已被替代：${id}`);
+      return record;
+    });
+  }
+
+  private replace(state: MemoryState, sources: MemoryRecord[], replacement: MemoryRecord, reason: string, kind: string) {
+    const sourceIds = new Set(sources.map((record) => record.id));
+    const before = sources.map((record) => ({ ...record }));
+    const at = this.now();
+    for (const record of sources) { record.supersededBy = replacement.id; record.updatedAt = at; }
+    const transferredImportant = state.importantIds.some((id) => sourceIds.has(id));
+    if (transferredImportant) {
+      state.importantIds = [...new Set(state.importantIds.map((id) => sourceIds.has(id) ? replacement.id : id))];
+    }
+    const result = { record: replacement, superseded: sources, transferredImportant, reason };
+    this.commit(state, kind, { before, ...result });
+    return result;
+  }
+
+  readRelationship(personId: unknown): RelationshipRecord | null {
+    const key = requiredText(personId, 'personId');
+    return this.state().relationships.find((record) => record.personId === key) ?? null;
+  }
+
+  queryRelationships(query: MemoryQuery = {}) {
+    return queryRecords(this.state().relationships, query, (record) => record.updatedAt, (record) => JSON.stringify(record));
+  }
+
+  writeRelationship(args: Record<string, unknown>): RelationshipRecord {
+    const personId = requiredText(args.personId, 'personId');
+    const state = this.state();
+    const before = state.relationships.find((record) => record.personId === personId);
+    if (!validAffinity(args.affinity)) throw new Error(`affinity 必须是 ${MIN_AFFINITY} 到 ${MAX_AFFINITY} 的有限数字`);
+    const at = this.now();
+    const after: RelationshipRecord = { personId, name: requiredText(args.name, 'name'),
+      aliases: args.aliases === undefined ? before?.aliases ?? [] : textList(args.aliases, 'aliases'),
+      relationship: requiredText(args.relationship, 'relationship'), affinity: args.affinity,
+      reason: requiredText(args.reason, 'reason'), createdAt: before?.createdAt ?? at, updatedAt: at };
+    state.relationships = [...state.relationships.filter((record) => record.personId !== personId), after];
+    this.commit(state, 'relationship_write', { before: before ?? null, after });
+    return after;
+  }
+
+  deleteRelationship(personId: unknown): boolean {
+    const key = requiredText(personId, 'personId');
+    const state = this.state();
+    const before = state.relationships.find((record) => record.personId === key);
+    if (!before) return false;
+    state.relationships = state.relationships.filter((record) => record.personId !== key);
+    this.commit(state, 'relationship_delete', { before });
+    return true;
   }
 
   read(id: unknown): MemoryRecord | null {
@@ -198,6 +295,9 @@ export class MemoryStore {
   delete(id: unknown): boolean {
     const key = requiredText(id, 'id');
     const state = this.state();
+    if (state.records.some((record) => record.supersededBy === key)) {
+      throw new Error('该记忆是替代目标，请先处理引用它的旧记忆');
+    }
     const records = state.records;
     const remaining = records.filter((r) => r.id !== key);
     if (remaining.length === records.length) return false;
@@ -247,9 +347,9 @@ export class MemoryStore {
         if (group.some((term) => expanded.has(term))) group.forEach((term) => expanded.add(term));
       }
     } while (expanded.size !== previousSize);
-    const ranked = this.records().map((record) => {
-      const title = normalize(record.title);
-      const score = [...expanded].filter((term) => title.includes(term)).length;
+    const ranked = this.records().filter((record) => !record.supersededBy).map((record) => {
+      const fields = [record.title, ...record.keywords].map(normalize);
+      const score = [...expanded].filter((term) => fields.some((field) => field.includes(term))).length;
       return { record, score };
     }).filter(({ score }) => score > 0)
       .sort((a, b) => b.score - a.score || b.record.updatedAt.localeCompare(a.record.updatedAt)

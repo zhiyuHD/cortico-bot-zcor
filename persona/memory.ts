@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { copyFileSync, existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import seedSynonyms from './synonyms.json';
-import { decodeMemoryState, MAX_AFFINITY, MAX_IMPORTANT, MEMORY_STATE_VERSION, MIN_AFFINITY, validAffinity,
+import { decodeMemoryState, MAX_AFFINITY, MAX_IMPORTANT, MAX_SOURCE_MESSAGE_CHARS, MEMORY_STATE_VERSION, MIN_AFFINITY, validAffinity,
   type MemoryState, type MemoryRecord, type RelationshipRecord } from './state.ts';
 
 export { MAX_AFFINITY, MAX_IMPORTANT, MEMORY_STATE_VERSION, MIN_AFFINITY } from './state.ts';
@@ -69,6 +69,10 @@ function terms(value: unknown): string[] {
   return [...new Set(value.map((v) => normalize(requiredText(v, '关键词'))))];
 }
 
+function synonymKey(group: string[]): string {
+  return [...group].sort().join('\0');
+}
+
 function textList(value: unknown, name: string): string[] {
   if (!Array.isArray(value)) throw new Error(`${name} 必须是字符串数组`);
   const unique = new Map<string, string>();
@@ -116,9 +120,12 @@ export class MemoryStore {
   private records(): MemoryRecord[] { return this.state().records; }
 
   private saveState(state: MemoryState): void {
-    if (existsSync(this.stateFile) && JSON.parse(readFileSync(this.stateFile, 'utf8')).version === 1) {
-      const snapshot = join(this.directory, 'memory-state.v1.json');
-      if (!existsSync(snapshot)) copyFileSync(this.stateFile, snapshot);
+    if (existsSync(this.stateFile)) {
+      const old = JSON.parse(readFileSync(this.stateFile, 'utf8')) as { version?: unknown };
+      if (typeof old.version === 'number' && old.version < MEMORY_STATE_VERSION) {
+        const snapshot = join(this.directory, `memory-state.v${old.version}.json`);
+        if (!existsSync(snapshot)) copyFileSync(this.stateFile, snapshot);
+      }
     }
     this.save(this.stateFile, state);
   }
@@ -184,7 +191,8 @@ export class MemoryStore {
       (entry) => JSON.stringify(entry));
   }
 
-  write(title: unknown, content: unknown, id?: unknown, keywords?: unknown): MemoryRecord {
+  write(title: unknown, content: unknown, id?: unknown, keywords?: unknown,
+    parentId?: unknown, sourceMessage?: unknown): MemoryRecord {
     const recordTitle = requiredText(title, 'title');
     const recordContent = requiredText(content, 'content');
     const state = this.state();
@@ -192,15 +200,72 @@ export class MemoryStore {
     const existing = id === undefined ? undefined : records.find((r) => r.id === requiredText(id, 'id'));
     if (id !== undefined && !existing) throw new Error('记忆 id 不存在');
     if (existing?.supersededBy) throw new Error('已被替代的记忆不能更新，请使用替代目标');
+    const recordId = existing?.id ?? randomUUID();
+    const nextParentId = parentId === undefined ? existing?.parentId ?? null
+      : this.validateParentId(state, parentId, recordId);
+    const nextSourceMessage = sourceMessage === undefined ? existing?.sourceMessage
+      : sourceMessage === null ? undefined : this.sourceMessage(sourceMessage);
     const at = this.now();
     const record = {
-      id: existing?.id ?? randomUUID(), title: recordTitle, content: recordContent,
+      id: recordId, title: recordTitle, content: recordContent, parentId: nextParentId,
       keywords: keywords === undefined ? existing?.keywords ?? [] : textList(keywords, 'keywords'),
       createdAt: existing?.createdAt ?? at, updatedAt: at,
+      ...(nextSourceMessage === undefined ? {} : { sourceMessage: nextSourceMessage }),
     };
     state.records = [...records.filter((r) => r.id !== record.id), record];
     this.commit(state, existing ? 'update' : 'create', { before: existing ?? null, after: record });
     return record;
+  }
+
+  private sourceMessage(value: unknown): string {
+    if (typeof value !== 'string' || !value.trim()) throw new Error('sourceMessage 必须是非空字符串');
+    if (value.length > MAX_SOURCE_MESSAGE_CHARS) throw new Error(`sourceMessage 不能超过 ${MAX_SOURCE_MESSAGE_CHARS} 个字符`);
+    return value;
+  }
+
+  private validateParentId(state: MemoryState, value: unknown, recordId: string): string | null {
+    if (value === null) return null;
+    const parentId = requiredText(value, 'parentId');
+    let currentId: string | null = parentId;
+    while (currentId !== null) {
+      if (currentId === recordId) throw new Error('父节点不能是自身或其后代');
+      const parent = state.records.find((record) => record.id === currentId);
+      if (!parent) throw new Error('父记忆 id 不存在');
+      currentId = parent.parentId ?? null;
+    }
+    return parentId;
+  }
+
+  nodes() {
+    return this.records().map(({ id, title, parentId, supersededBy }) => ({ id, title, parentId: parentId ?? null, supersededBy }));
+  }
+
+  children(parentId: unknown = null) {
+    const state = this.state();
+    let key: string | null = null;
+    if (parentId !== null) {
+      key = requiredText(parentId, 'parentId');
+      if (!state.records.some((record) => record.id === key)) throw new Error('父记忆 id 不存在');
+    }
+    const items = state.records.filter((record) => (record.parentId ?? null) === key);
+    return { parentId: key, items, total: items.length };
+  }
+
+  trace(id: unknown) {
+    const state = this.state();
+    const key = requiredText(id, 'id');
+    const record = state.records.find((item) => item.id === key);
+    if (!record) throw new Error('记忆 id 不存在');
+    const ancestors: MemoryRecord[] = [];
+    let parentId = record.parentId ?? null;
+    while (parentId !== null) {
+      const parent = state.records.find((item) => item.id === parentId);
+      if (!parent) throw new Error(`记忆父节点不存在：${parentId}`);
+      ancestors.push(parent);
+      parentId = parent.parentId;
+    }
+    ancestors.reverse();
+    return { path: [...ancestors, record], children: state.records.filter((item) => (item.parentId ?? null) === key) };
   }
 
   supersede(ids: unknown, replacementId: unknown, reason: unknown) {
@@ -225,6 +290,7 @@ export class MemoryStore {
     const replacement: MemoryRecord = { id: randomUUID(), title: requiredText(title, 'title'),
       content: requiredText(content, 'content'), keywords: keywords === undefined
         ? textList(sources.flatMap((record) => record.keywords), 'keywords') : textList(keywords, 'keywords'),
+      parentId: sources.every((record) => record.parentId === sources[0].parentId) ? sources[0].parentId : null,
       createdAt: at, updatedAt: at };
     const explanation = requiredText(reason, 'reason');
     state.records.push(replacement);
@@ -267,10 +333,15 @@ export class MemoryStore {
     const state = this.state();
     const before = state.relationships.find((record) => record.personId === personId);
     if (!validAffinity(args.affinity)) throw new Error(`affinity 必须是 ${MIN_AFFINITY} 到 ${MAX_AFFINITY} 的有限数字`);
+    const memoryNodeId = args.memoryNodeId === undefined ? before?.memoryNodeId ?? null
+      : args.memoryNodeId === null ? null : requiredText(args.memoryNodeId, 'memoryNodeId');
+    if (memoryNodeId !== null && !state.records.some((record) => record.id === memoryNodeId)) {
+      throw new Error('关联的记忆节点不存在');
+    }
     const at = this.now();
     const after: RelationshipRecord = { personId, name: requiredText(args.name, 'name'),
       aliases: args.aliases === undefined ? before?.aliases ?? [] : textList(args.aliases, 'aliases'),
-      relationship: requiredText(args.relationship, 'relationship'), affinity: args.affinity,
+      memoryNodeId, relationship: requiredText(args.relationship, 'relationship'), affinity: args.affinity,
       reason: requiredText(args.reason, 'reason'), createdAt: before?.createdAt ?? at, updatedAt: at };
     state.relationships = [...state.relationships.filter((record) => record.personId !== personId), after];
     this.commit(state, 'relationship_write', { before: before ?? null, after });
@@ -299,11 +370,16 @@ export class MemoryStore {
       throw new Error('该记忆是替代目标，请先处理引用它的旧记忆');
     }
     const records = state.records;
+    const before = records.find((record) => record.id === key);
+    if (!before) return false;
+    if (records.some((record) => record.parentId === key)) throw new Error('该节点有子节点，请先移动或删除子节点');
+    if (state.relationships.some((record) => record.memoryNodeId === key)) {
+      throw new Error('该节点关联人物关系，请先解除关系链接');
+    }
     const remaining = records.filter((r) => r.id !== key);
-    if (remaining.length === records.length) return false;
     state.records = remaining;
     state.importantIds = state.importantIds.filter((id) => id !== key);
-    this.commit(state, 'delete', { before: records.find((record) => record.id === key) });
+    this.commit(state, 'delete', { before });
     return true;
   }
 
@@ -313,12 +389,57 @@ export class MemoryStore {
     return data.map(terms);
   }
 
+  synonymGroups(): string[][] { return this.synonyms().map((group) => [...group]); }
+
   addSynonyms(value: unknown): string[] {
     const group = terms(value);
     if (group.length < 2) throw new Error('同义词组至少需要两个不同的词');
     const groups = this.synonyms();
+    if (groups.some((existing) => synonymKey(existing) === synonymKey(group))) throw new Error('同义词组已存在');
     this.save(this.synonymsFile, [...groups, group]);
+    this.commit(this.state(), 'synonyms_add', { after: group });
     return group;
+  }
+
+  updateSynonyms(beforeValue: unknown, afterValue: unknown): string[] {
+    const before = terms(beforeValue);
+    const after = terms(afterValue);
+    if (before.length < 2 || after.length < 2) throw new Error('同义词组至少需要两个不同的词');
+    const groups = this.synonyms();
+    const index = groups.findIndex((group) => synonymKey(group) === synonymKey(before));
+    if (index < 0) throw new Error('同义词组不存在或已被修改');
+    if (groups.some((group, i) => i !== index && synonymKey(group) === synonymKey(after))) {
+      throw new Error('同义词组已存在');
+    }
+    const previous = groups[index];
+    groups[index] = after;
+    this.save(this.synonymsFile, groups);
+    this.commit(this.state(), 'synonyms_update', { before: previous, after });
+    return after;
+  }
+
+  deleteSynonyms(value: unknown): boolean {
+    const target = terms(value);
+    const groups = this.synonyms();
+    const index = groups.findIndex((group) => synonymKey(group) === synonymKey(target));
+    if (index < 0) throw new Error('同义词组不存在或已被修改');
+    const [before] = groups.splice(index, 1);
+    this.save(this.synonymsFile, groups);
+    this.commit(this.state(), 'synonyms_delete', { before });
+    return true;
+  }
+
+  expandSynonyms(value: unknown): string[] {
+    const expanded = new Set(terms(value));
+    const groups = this.synonyms();
+    let previousSize: number;
+    do {
+      previousSize = expanded.size;
+      for (const group of groups) {
+        if (group.some((term) => expanded.has(term))) group.forEach((term) => expanded.add(term));
+      }
+    } while (expanded.size !== previousSize);
+    return [...expanded];
   }
 
   /** 本地词匹配是语义检索的低调用成本 fallback，排名不代表模型判断的相关性。 */
@@ -338,22 +459,14 @@ export class MemoryStore {
 
   candidates(value: unknown): { keywords: string[]; expanded: string[]; records: MemoryRecord[] } {
     const keywords = terms(value);
-    const expanded = new Set(keywords);
-    const groups = this.synonyms();
-    let previousSize: number;
-    do {
-      previousSize = expanded.size;
-      for (const group of groups) {
-        if (group.some((term) => expanded.has(term))) group.forEach((term) => expanded.add(term));
-      }
-    } while (expanded.size !== previousSize);
+    const expanded = this.expandSynonyms(keywords);
     const ranked = this.records().filter((record) => !record.supersededBy).map((record) => {
       const fields = [record.title, ...record.keywords].map(normalize);
-      const score = [...expanded].filter((term) => fields.some((field) => field.includes(term))).length;
+      const score = expanded.filter((term) => fields.some((field) => field.includes(term))).length;
       return { record, score };
     }).filter(({ score }) => score > 0)
       .sort((a, b) => b.score - a.score || b.record.updatedAt.localeCompare(a.record.updatedAt)
         || a.record.id.localeCompare(b.record.id));
-    return { keywords, expanded: [...expanded], records: ranked.slice(0, MAX_CANDIDATES).map(({ record }) => record) };
+    return { keywords, expanded, records: ranked.slice(0, MAX_CANDIDATES).map(({ record }) => record) };
   }
 }

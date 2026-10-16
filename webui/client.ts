@@ -1,9 +1,13 @@
 import type { WebUiClientBundle, WebUiPanelContext } from 'cortico/web/shared/client-panel.ts';
+import { mountHistory } from './history.ts';
+import { mountMemories } from './memories.ts';
+import { mountSynonyms } from './synonyms.ts';
 
 interface RelationshipRecord {
   personId: string;
   name: string;
   aliases: string[];
+  memoryNodeId?: string | null;
   relationship: string;
   affinity: number;
   reason: string;
@@ -20,6 +24,7 @@ const copy = {
   zh: {
     title: '人物关系', search: '姓名、别名、关系或依据', searchAction: '搜索', add: '新增关系',
     id: '人物 ID', name: '姓名', aliases: '别名', relationship: '关系', affinity: '好感度',
+    memoryNode: '人物节点',
     reason: '判断依据', save: '保存', cancel: '取消', edit: '编辑', remove: '删除',
     updated: '更新时间', actions: '操作', empty: '暂无关系记录', loading: '读取中…',
     createTitle: '新增人物关系', editTitle: '编辑人物关系', saved: '关系已保存', deleted: '关系已删除',
@@ -31,6 +36,7 @@ const copy = {
   en: {
     title: 'Relationships', search: 'Name, alias, relationship or reason', searchAction: 'Search', add: 'Add relationship',
     id: 'Person ID', name: 'Name', aliases: 'Aliases', relationship: 'Relationship', affinity: 'Affinity',
+    memoryNode: 'Person node',
     reason: 'Reason', save: 'Save', cancel: 'Cancel', edit: 'Edit', remove: 'Delete',
     updated: 'Updated', actions: 'Actions', empty: 'No relationship records', loading: 'Loading…',
     createTitle: 'Add relationship', editTitle: 'Edit relationship', saved: 'Relationship saved', deleted: 'Relationship deleted',
@@ -68,6 +74,7 @@ function mountRelationships(ctx: WebUiPanelContext): void {
   const name = ui.input();
   const aliases = ui.input({ placeholder: ctx.language === 'en' ? 'Separate with commas' : '用逗号分隔' });
   const relationship = ui.input();
+  const memoryNode = ui.select({ options: [{ value: '', label: ctx.language === 'en' ? 'No linked node' : '未关联节点' }] });
   const affinity = ui.input({ type: 'number', value: '0' });
   affinity.min = '-100';
   affinity.max = '100';
@@ -79,7 +86,7 @@ function mountRelationships(ctx: WebUiPanelContext): void {
   formActions.append(save, ui.button(S.cancel, { onClick: () => { editor.el.hidden = true; } }));
   editor.body.append(
     ui.field(S.id, personId), ui.field(S.name, name), ui.field(S.aliases, aliases),
-    ui.field(S.relationship, relationship), ui.field(S.affinity, affinity), ui.field(S.reason, reason),
+    ui.field(S.relationship, relationship), ui.field(S.memoryNode, memoryNode), ui.field(S.affinity, affinity), ui.field(S.reason, reason),
     editorStatus, formActions,
   );
 
@@ -95,13 +102,32 @@ function mountRelationships(ctx: WebUiPanelContext): void {
     name.value = record?.name ?? '';
     aliases.value = record?.aliases.join(', ') ?? '';
     relationship.value = record?.relationship ?? '';
+    memoryNode.value = record?.memoryNodeId ?? '';
     affinity.value = String(record?.affinity ?? 0);
     reason.value = record?.reason ?? '';
     editorStatus.textContent = '';
     editorStatus.classList.remove('bad');
     editor.el.hidden = false;
     name.focus();
+    void loadMemoryNodes();
   };
+  async function loadMemoryNodes(): Promise<void> {
+    try {
+      const nodes = await ctx.invoke<Array<{ id: string; title: string }>>('nodes');
+      const selected = memoryNode.value;
+      const options = [{ value: '', label: ctx.language === 'en' ? 'No linked node' : '未关联节点' },
+        ...nodes.map((node) => ({ value: node.id, label: `${node.title} · ${node.id}` }))];
+      memoryNode.replaceChildren(...options.map((item) => {
+        const option = document.createElement('option');
+        option.value = item.value;
+        option.textContent = item.label;
+        return option;
+      }));
+      memoryNode.value = options.some((item) => item.value === selected) ? selected : '';
+    } catch (error) {
+      showError(editorStatus, `${S.saveError}: ${String(error)}`);
+    }
+  }
   const render = (records: RelationshipRecord[]): void => {
     table.clear(records.length ? undefined : S.empty);
     for (const record of records) {
@@ -154,6 +180,7 @@ function mountRelationships(ctx: WebUiPanelContext): void {
       await ctx.invoke('write', [{
         personId: personId.value.trim(), name: name.value.trim(),
         aliases: aliases.value.split(/[,，、\n]/).map((entry) => entry.trim()).filter(Boolean),
+        memoryNodeId: memoryNode.value || null,
         relationship: relationship.value.trim(), affinity: value, reason: reason.value.trim(),
       }]);
       editor.el.hidden = true;
@@ -181,11 +208,17 @@ function mountRelationships(ctx: WebUiPanelContext): void {
   header.append(add);
   listSheet.body.prepend(header);
   ctx.root.append(listSheet.el, editor.el);
+  void loadMemoryNodes();
   void load();
 }
 
 const bundle: WebUiClientBundle = {
-  panels: { relationships: { mount: mountRelationships } },
+  panels: {
+    memories: { mount: mountMemories },
+    history: { mount: mountHistory },
+    relationships: { mount: mountRelationships },
+    synonyms: { mount: mountSynonyms },
+  },
 };
 
 export default bundle;

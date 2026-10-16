@@ -28,6 +28,8 @@ export default {
       zcor_memory_delete: { zh: '删除一条 Memory，并保留操作历史。', en: 'Deletes a memory while retaining its operation history.' },
       zcor_memory_important: { zh: '标记或取消重要 Memory。', en: 'Marks or unmarks an important memory.' },
       zcor_memory_query: { zh: '按关键词、时间范围查询当前 Memory。', en: 'Queries current memories by keywords and time range.' },
+      zcor_memory_children: { zh: '读取 Memory 节点的直属子节点。', en: 'Reads the direct children of a Memory node.' },
+      zcor_memory_trace: { zh: '读取 Memory 节点的父链和直属子节点。', en: 'Reads a Memory node path and its direct children.' },
       zcor_relationship_read: { zh: '按人物 id 读取关系和好感度。', en: 'Reads a relationship and affinity by person id.' },
       zcor_relationship_query: { zh: '按人物姓名、别名和时间查找关系记录。', en: 'Finds relationship records by name, alias and time.' },
       zcor_relationship_write: { zh: '新增或更新人物关系和好感度。', en: 'Creates or updates a relationship and affinity.' },

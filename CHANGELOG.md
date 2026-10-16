@@ -1,5 +1,13 @@
 <!-- Owner: package.json and the zcor extension package -->
 
+## 0.5.0
+
+- Store memories as parent-linked nodes with source messages, traversal tools and relationship links.
+- Migrate Memory state versions 1 and 2 to version 3, preserving snapshots before the first write.
+- Add Memory and operation history panels with keyword and time filters.
+- Allow the Memory panel to edit, delete and mark records important.
+- Add synonym group management and local expansion preview.
+
 ## 0.4.0
 
 - Add settings for automatic recall and relationship memory.

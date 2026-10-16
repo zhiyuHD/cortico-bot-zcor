@@ -1,4 +1,4 @@
-<!-- Owner: package.json, index.ts, persona/persona.ts, persona/memory.ts, webui/client.ts -->
+<!-- Owner: package.json, index.ts, persona/state.ts, persona/persona.ts, persona/memory.ts, webui/memories.ts, webui/client.ts -->
 
 # zcor
 
@@ -7,18 +7,20 @@
 在控制台扩展页选择本机目录 `packages/cortico-bot-zcor` 安装，在部署的
 `deployment.json` 中将 `bot` 设为 `cortico-bot-zcor`，重启生效。
 
-配置页可调整自动回忆字符预算和人物关系记忆开关。Memory 页的人物关系面板支持搜索、新建、编辑和删除；写入与删除会记录在 Memory 操作历史中。
+配置页可调整自动回忆字符预算和人物关系记忆开关。Memory 页支持按关键词和时间查找记忆、查看节点路径、子节点和原始消息，以及新建、编辑、删除和标记重要；可查看操作历史及修改前后的内容快照。人物关系面板支持搜索、新建、编辑和删除，并可关联人物节点。同义词库面板支持管理词组并预览本地扩展结果。
 
 AI 自行调用工具保存和检索记忆：
 
-- `zcor_memory_write(title, content, id?, keywords?)`：新增记忆；提供 id 时更新，可添加检索词。
+- `zcor_memory_write(title, content, id?, keywords?, parentId?, sourceMessage?)`：新增或更新节点。新节点省略 `parentId` 时为根节点；更新省略时保留原父节点，传 `null` 移到根。`sourceMessage` 可保存确有来源的原始文本，最多 20,000 字符，传 `null` 可清除。
 - `zcor_memory_read(id)` / `zcor_memory_delete(id)`：读取或删除当前记忆；历史保留删除前内容。
+- `zcor_memory_children(parentId?)`：读取根节点或指定节点的直属子节点。
+- `zcor_memory_trace(id)`：读取根到目标节点的路径及直属子节点。
 - `zcor_memory_important(id, important)`：标记或取消重要记忆。
 - `zcor_memory_query(keywords?, from?, to?, limit?, offset?, includeSuperseded?)`：本地查询当前记忆。
 - `zcor_memory_merge(ids, title, content, keywords?, reason)`：合并记忆并保留来源记录。
 - `zcor_memory_supersede(ids, replacementId, reason)`：标记已有记忆已被替代。
 - `zcor_relationship_read(personId)` / `zcor_relationship_query(...)`：查询人物关系和好感度。
-- `zcor_relationship_write(personId, name, relationship, affinity, reason, aliases?)`：保存人物关系和好感度。
+- `zcor_relationship_write(personId, name, relationship, affinity, reason, aliases?, memoryNodeId?)`：保存人物关系和好感度，可关联人物节点。
 - `zcor_relationship_delete(personId)`：删除人物关系，历史保留删除前内容。
 - `zcor_memory_history(keywords?, from?, to?, limit?, offset?)`：本地查询操作历史。
 - `zcor_memory_backup()` / `zcor_memory_restore(backupFile)`：备份或恢复 Memory 状态。
@@ -56,19 +58,21 @@ AI 自行调用工具保存和检索记忆：
 system prompt 指引 Persona 在对话涉及某人时先查询，取得新互动依据后再更新；每次关系创建、修改和删除均留痕。
 关闭配置中的人物关系记忆后，AI 不再收到关系工具和维护指引；Memory 页仍可管理现有记录。
 
+每条记忆是一个节点，`parentId` 指向其父节点；一个节点可以有多个子节点。人物节点可关联人物关系，近况或事件可作为其子节点，`sourceMessage` 保存可追溯的原始消息文本。模型提交的原文由模型提供，存储层不验证其来源。删除有子节点或人物关系链接的节点前，须先处理这些引用；替代目标不能删除，删除记忆时会同步移除其重要标记。当前状态拒绝不存在的父节点、替代目标或人物节点链接，以及父节点环路。
+
 `zcor_memory_merge` 会新建合并记录并将来源记录标记为被替代，重要标记转移到新记录。`zcor_memory_supersede`
 将旧记录指向现有记录。被替代记录保留且可按 id 读取，默认不参与自动回忆、候选检索和当前记忆查询；
 查询可设 `includeSuperseded=true` 查看。被引用的替代目标不能直接删除。
 
 `memory-state.json` 原子保存当前记忆、重要标记、人物关系和操作历史，包含状态格式版本。首次工具操作自动载入旧
 `memories.json` 的全部记录，保留原文件作迁移快照，此后以 `memory-state.json` 为准。
-版本 1 状态会在读取时补齐检索词和空关系集合；首次写入版本 2 前，原状态保留为 `memory-state.v1.json`。
+版本 1 状态会在读取时补齐检索词和空关系集合；版本 1、2 的记录迁移为根节点，旧关系不关联节点。首次写入当前格式前，旧状态分别保留为 `memory-state.v1.json` 或 `memory-state.v2.json`。
 没有旧文件时从空记忆开始。操作历史从迁移后开始；修改保留前后全文，删除保留删除前全文，
 重要标记保留替换回执。所有记忆工具调用记录参数及成功或错误状态，包括读取、查询和同义词修改；
 自动召回、系统前缀读取不记操作历史。历史查询本身在结果产生后留痕。
 历史随操作累积、没有自动清理；整份状态文件在写入时重写，适合单进程的小型 Memory。
 同义词文件与操作日志分别保存，日志写入失败会返回“操作可能已生效”的错误。
-`zcor_memory_backup` 生成带时间戳的状态副本；恢复前应先备份当前状态，恢复接受版本 1 或 2 的副本。
+`zcor_memory_backup` 生成带时间戳的状态副本；恢复前应先备份当前状态，恢复接受版本 1、2 或 3 的副本。
 
 `synonyms.json` 保存词组，首次创建时复制包内的中文及少量英文词组。
 可以通过工具补充，或直接编辑部署侧同义词文件。
@@ -77,5 +81,5 @@ system prompt 指引 Persona 在对话涉及某人时先查询，取得新互动
 检索不使用向量或 embeddings 服务；主对话与筛选使用部署配置的 provider。
 
 在仓库根运行 `pnpm check:extension packages/cortico-bot-zcor` 验证扩展接口，
-运行 `pnpm --dir packages/cortico-bot-zcor build:webui` 构建关系面板，
+运行 `pnpm --dir packages/cortico-bot-zcor build:webui` 构建 Memory 页面，
 运行 `pnpm exec vitest run tests/zcor` 验证持久化、同义词扩展和检索。

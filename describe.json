@@ -2,7 +2,7 @@
   "tools": [
     {
       "name": "zcor_memory_write",
-      "description": "持久化标题、正文和可选检索词；提供已有 id 时更新，否则新增。",
+      "description": "新增或更新 Memory 节点，可指定父节点并保存来源消息。",
       "parameters": {
         "type": "object",
         "additionalProperties": false,
@@ -25,6 +25,19 @@
               "type": "string",
               "minLength": 1
             }
+          },
+          "parentId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "sourceMessage": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 20000
           }
         },
         "required": [
@@ -160,6 +173,54 @@
       "summary": {
         "zh": "按关键词、时间范围查询当前 Memory。",
         "en": "Queries current memories by keywords and time range."
+      }
+    },
+    {
+      "name": "zcor_memory_children",
+      "description": "读取根节点或指定节点的直属子节点。",
+      "parameters": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "parentId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": []
+      },
+      "tags": [
+        "read"
+      ],
+      "summary": {
+        "zh": "读取 Memory 节点的直属子节点。",
+        "en": "Reads the direct children of a Memory node."
+      }
+    },
+    {
+      "name": "zcor_memory_trace",
+      "description": "读取节点从根到自身的路径及直属子节点。",
+      "parameters": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "required": [
+          "id"
+        ]
+      },
+      "tags": [
+        "read"
+      ],
+      "summary": {
+        "zh": "读取 Memory 节点的父链和直属子节点。",
+        "en": "Reads a Memory node path and its direct children."
       }
     },
     {
@@ -318,7 +379,7 @@
     },
     {
       "name": "zcor_relationship_write",
-      "description": "保存人物关系、-100 到 100 的好感度及判断原因。",
+      "description": "保存人物关系、-100 到 100 的好感度及判断原因，可关联人物 Memory 节点。",
       "parameters": {
         "type": "object",
         "additionalProperties": false,
@@ -337,6 +398,12 @@
               "type": "string",
               "minLength": 1
             }
+          },
+          "memoryNodeId": {
+            "type": [
+              "string",
+              "null"
+            ]
           },
           "relationship": {
             "type": "string",

@@ -1,5 +1,9 @@
 <!-- Owner: package.json and the zcor extension package -->
 
+## 0.5.1
+
+- Release the linked-memory and Memory WebUI package as a patch version.
+
 ## 0.5.0
 
 - Store memories as parent-linked nodes with source messages, traversal tools and relationship links.

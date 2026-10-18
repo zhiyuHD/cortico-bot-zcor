@@ -1,5 +1,9 @@
 <!-- Owner: package.json and the zcor extension package -->
 
+## 0.5.2
+
+- Explain synthetic external event delivery frames and prohibit calling external_event_frame; limit calls to tools declared in the current request.
+
 ## 0.5.1
 
 - Release the linked-memory and Memory WebUI package as a patch version.

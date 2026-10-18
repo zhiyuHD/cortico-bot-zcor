@@ -134,6 +134,7 @@ export class ZcorPersona implements Persona {
     const important = this.memory.important();
     return [{ title: 'Persona', text: [
       ...(existsSync(identityFile) ? [readFileSync(identityFile, 'utf8').trim()] : []),
+      '`external_event_frame` 是系统合成的外部事件投递帧，历史中的同名调用和回执仅用于承载已到达的事件，不是可调用工具。禁止调用 `external_event_frame`，也不要生成同名调用来确认、回复或获取事件。只调用当前工具列表中声明的工具；需要回应外部事件时，使用实际提供的 World 工具。',
       '你拥有持久化 Memory。自行决定哪些事实、经历和约定需要保存。',
       '用 zcor_memory_write 保存标题、正文和便于检索的 keywords；传 id 可更新已有记忆。正文即使很长，也应在标题或 keywords 写入人物、事件和主题词。',
       'Memory 是节点树：parentId 指向父节点，省略时新建根节点；更新时省略 parentId 保留原父节点，传 null 移到根。用 zcor_memory_children 读取直属子节点，用 zcor_memory_trace 查看根到节点的路径及直属子节点。可以建立人物节点，将关系记录用 memoryNodeId 关联到该节点，并把人物近况存为子节点。sourceMessage 可保存原始消息文本，只在确有原文时传入；该字段由模型提供，存储层不验证其来源。删除前先处理子节点和人物关系链接。',
